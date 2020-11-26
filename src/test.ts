@@ -5,6 +5,7 @@ import PeerId from 'peer-id'
 import * as fs from 'fs'
 import { Tor } from './index'
 import { ConnectionsManager } from './connectionsManager'
+import { sleep } from './sleep'
 // import { sleep } from './sleep'
 
 const main = async () => {
@@ -19,10 +20,10 @@ const main = async () => {
     }
   } })
   await tor.init()
-  await tor.addService({ port: 7755 })
+  await tor.addService({ port: 7756 })
   // await tor.addService({ port: 7756 })
   // await tor.addService({ port: 7757 })
-  const address1 = tor.getServiceAddress(7755)
+  const address1 = tor.getServiceAddress(7756)
   // const address2 = tor.getServiceAddress(7756)
   // const address3 = tor.getServiceAddress(7757)
   // await tor.addService({ port: 7756 })
@@ -46,10 +47,14 @@ const main = async () => {
     const peerId2Restored = await PeerId.createFromJSON(parsedId2)
     // console.log('nodetest', node2.address)
 
-    const connectionsManager1 = new ConnectionsManager({ port: 7755, host: add1, agentHost: 'localhost', agentPort: 9050 })
-    const node1 = await connectionsManager1.initializeNode(peerId1Restored)
+    const connectionsManager1 = new ConnectionsManager({ port: 7756, host: add1, agentHost: 'localhost', agentPort: 9050 })
+    const node1 = await connectionsManager1.initializeNode()
     await connectionsManager1.subscribeForTopic({topic: '/libp2p/example/chat/1.0.0', channelAddress: 'test-address' })
     console.log('nodetest', node1.address)
+    console.log('sleeping')
+    await sleep(1 * 60000)
+    console.log('start sending')
+    connectionsManager1.startSendingMessages('test-address', node1.peerId)
 
     // const connectionsManager2 = new ConnectionsManager({ port: 7756, host: add2, agentHost: 'localhost', agentPort: 9050 })
     // const node2 = await connectionsManager2.initializeNode(peerId2Restored)
