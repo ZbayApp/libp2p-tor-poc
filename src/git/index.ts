@@ -3,9 +3,12 @@ import * as fs from 'fs/promises'
 import * as os from 'os'
 import * as path from 'path'
 import { assert } from 'console';
+import { Worker } from 'worker_threads';
+
 import { 
   Repository, ProxyOptions, 
-  Reference, Signature, Revwalk
+  RemoteCallbacks, Reference, 
+  Signature, FetchOptions, Cred
 } from 'nodegit'
 
 export class Message {
@@ -16,37 +19,38 @@ export class Message {
 }
 
 export class ChannelRepository {
-  basedir: string;
-  parentId: string | null;
-  repoObject: Repository;
+  private basedir: string;
+  private repoObject: Repository;
+  private proxySettings: ProxyOptions;
 
-  private constructor(repoObject: Repository, basepath: string) {
-    assert(basepath != null);
-    assert(repoObject !== null)
+  private constructor(repoObject: Repository, basepath: string, proxySettings: ProxyOptions) {
+    assert(basepath !== null);
+    assert(repoObject !== null);
+    assert(proxySettings !== null);
     this.basedir = basepath;
     this.repoObject = repoObject;
+    this.proxySettings = proxySettings;
   }
 
   public name() : string { 
     return path.basename(this.basedir); 
   }
 
-  public static async open(basepath: string) : Promise<ChannelRepository> {
-    console.log('opening channel at basepath ', basepath)
+  public static async open(basepath: string, proxySettings: ProxyOptions) : Promise<ChannelRepository> {
     return new ChannelRepository(
       await Repository.open(
         path.resolve(basepath, '.git')), 
-      basepath);
+      basepath, proxySettings);
   }
 
-  public static async create(basepath: string) : Promise<ChannelRepository> {
+  public static async create(basepath: string, proxySettings: ProxyOptions) : Promise<ChannelRepository> {
     const IsBareRepository : number = 0;
     await fse.ensureDir(basepath);
 
     return new ChannelRepository(
       await Repository.init(
         basepath, IsBareRepository), 
-      basepath);
+      basepath, proxySettings);
   }
 
   /**
@@ -129,11 +133,22 @@ export class ChannelRepository {
     }
   }
 
-  // TODO: implement
-  public async pullChanges(
-    onionAddress: string, 
-    mergeTimeFromSource: number | null = null) : Promise<number> { return null; }
-
+  public async synchronize(onionAddress: string) : Promise<number> { 
+    const mergeTimestamp = Date.now();
+    const remoteUrl = `git://${onionAddress}/${this.name()}/`;
+    await this.repoObject.fetchAll(<FetchOptions> {
+      callbacks: <RemoteCallbacks> {
+        credentials: (url, username) => {
+          console.log('credentials callback', url, username);
+          return Cred.sshKeyFromAgent(username);
+        },
+        certificateCheck: () => 0
+      },
+      proxyOpts: this.proxySettings
+    })
+    const commitid = await this.repoObject.mergeBranches('master', 'origin/master');
+    return commitid.tostrS(); 
+  }
 }
 
 type ReposMap = Map<string, Repository>
@@ -159,16 +174,27 @@ export class GitHistoryStore {
   private proxySettings: ProxyOptions;
 
   /**
+   * This is the worker thread that hosts the git server for
+   * other peers to sync their repos with the current local one.
+   */
+  private serverWorker: Worker;
+
+  /**
    * This is the root directory where all channels have their repos stored.
    * TODO: make this path configuratble through a separate config 
    * TODO: object that default to the current user home directory.
    */
-  private _basedir: string = `${os.homedir()}/ZBayChannels/`;
+  private basedir: string = `${os.homedir()}/ZBayChannels/`;
 
   private constructor(proxySettings: ProxyOptions) {
     assert(proxySettings !== null);
     this.proxySettings = proxySettings;
     this.reposMap = new Map<string, Repository>();
+    this.serverWorker = new Worker(path.resolve(__dirname, './worker.js'), {
+      workerData: {
+        someNumber: 15
+      }
+    });
   }
   
   /**
@@ -182,7 +208,7 @@ export class GitHistoryStore {
    */
   public static async open(proxySettings: ProxyOptions): Promise<GitHistoryStore> { 
     let store = new GitHistoryStore(proxySettings);
-    await fse.ensureDir(store._basedir);
+    await fse.ensureDir(store.basedir);
     for await (const repo of store.enumerateRepositories()) {
       store.reposMap.set(repo.name(), repo);
     }
@@ -213,7 +239,8 @@ export class GitHistoryStore {
 
     // create a new repo and track it in the repos map
     const repo = await ChannelRepository.create(
-      path.join(this._basedir, channelName));
+      path.join(this.basedir, channelName), 
+      this.proxySettings);
     this.reposMap.set(repo.name(), repo);
     return repo;
   }
@@ -236,10 +263,10 @@ export class GitHistoryStore {
   }
 
   private async* enumerateRepositories() {
-    for (const direntry of await fs.readdir(this._basedir)) {
-      const channelBasedir = path.join(this._basedir, direntry);
+    for (const direntry of await fs.readdir(this.basedir)) {
+      const channelBasedir = path.join(this.basedir, direntry);
       if ((await fs.stat(channelBasedir)).isDirectory()) {
-        yield ChannelRepository.open(channelBasedir);
+        yield ChannelRepository.open(channelBasedir, this.proxySettings);
       }
     }
   }
