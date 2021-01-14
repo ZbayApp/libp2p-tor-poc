@@ -6,7 +6,7 @@ import * as os from 'os'
 import fs from 'fs'
 import PeerId from 'peer-id'
 import { ConnectionsManager } from './libp2p/connectionsManager'
-import { Git } from './git/index'
+import { Git } from './git/index.old'
 import initListeners from './socket/listeners'
 import { sleep } from './sleep'
 const socketio = require('socket.io')
@@ -43,11 +43,11 @@ export class DataServer {
   }
 
     public listen = (): void => {
-    this.server.listen(this.PORT, () => {
-      console.debug(`Server running on port ${this.PORT}`)
-    })
-    initListeners(this.io, this.connectonsManager, this.git)
-  }
+      this.server.listen(this.PORT, () => {
+        console.debug(`Server running on port ${this.PORT}`)
+      })
+      initListeners(this.io, this.connectonsManager, this.git)
+    }
 
   public initGit = async (): Promise<void> => {
     await this.git.init()

@@ -1,6 +1,6 @@
 import { Tor } from 'tor-manager'
 import { DataServer } from './socket/DataServer'
-import { Git } from './git/index'
+import { Git } from './git/index.old'
 import { ConnectionsManager } from './libp2p/connectionsManager'
 import initListeners from './socket/listeners/'
 import * as path from 'path'
@@ -9,15 +9,18 @@ import fs from 'fs'
 import PeerId from 'peer-id'
 
 const main = async () => {
+  console.log("test");
   const torPath = `${process.cwd()}/tor/tor`
   const settingsPath = `${process.cwd()}/tor/torrc`
   const pathDevLib = path.join.apply(null, [process.cwd(), 'tor'])
-  const tor = new Tor({ torPath, settingsPath, options: {
-    env: {
-      LD_LIBRARY_PATH: pathDevLib,
-      HOME: os.homedir()
+  const tor = new Tor({
+    torPath, settingsPath, options: {
+      env: {
+        LD_LIBRARY_PATH: pathDevLib,
+        HOME: os.homedir()
+      }
     }
-  } })
+  })
   await tor.init()
   let service1
   let service2

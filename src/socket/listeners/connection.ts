@@ -1,6 +1,6 @@
 import { EventTypesServer } from '../constants'
 import { EventTypesResponse } from '../constantsReponse'
-import { Git } from '../../git/'
+import { Git } from '../../git/index.old'
 import { ConnectionsManager } from '../../libp2p/connectionsManager'
 import { Tor } from 'tor-manager'
 

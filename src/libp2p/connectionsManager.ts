@@ -13,7 +13,7 @@ import Bootstrap from 'libp2p-bootstrap'
 import { sleep } from '../sleep'
 import Crypto from 'crypto'
 import randomTimestamp from 'random-timestamps'
-import { Git, State } from '../git/index'
+import { Git, State } from '../git/index.old'
 import { gitP } from 'simple-git'
 import multihashing from 'multihashing-async'
 import crypto from 'crypto'
@@ -92,6 +92,8 @@ export class ConnectionsManager {
     ]
 
     const bootstrapMultiaddrs = [
+      '/dns4/sxepr4vqitqsm4pmvulvfunaruwcknckryq2uhk62dmual3z2otgdxad.onion/tcp/7788/ws/p2p/Qmco9kW9Td6RmnPD6Zjse95ZUJcrZTLwGQ7x1QMT78X7fv',
+      '/dns4/6lm5w4lhvnfnqigibclw6utwz5ajfi5zhje7k6vdt2dtemq2r36fbmid.onion/tcp/7788/ws/p2p/QmTssAaBSc4boWKdpJN3R2o7SrMbC5Re7KxnR8WjrVzhaG',
       '/dns4/v5nvvfcfpceu6z6hao576ecbfvxin5ahmpbf6rovxbks2kevdxusfayd.onion/tcp/7788/ws/p2p/QmUXEz4fN7oTLFvK6Ee4bRDL3s6dp1VCuHogmrrKxUngWW'
     ]
 
