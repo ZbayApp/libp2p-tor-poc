@@ -1,11 +1,9 @@
+import * as fse from 'fs-extra'
 import * as fs from 'fs/promises'
 import * as os from 'os'
 import * as path from 'path'
-import * as git from 'nodegit'
 import { assert } from 'console';
-
-export enum Type { Bare, Standard }
-export enum State { Locked, Unlocked }
+import { Repository, ProxyOptions } from 'nodegit'
 
 export class Message {
   timestamp: number;
@@ -13,11 +11,12 @@ export class Message {
   signature: string;
 }
 
-export class Repository {
+export class ChannelRepository {
   basedir: string;
-  repoObject: git.Repository;
+  parentId: string | null;
+  repoObject: Repository;
 
-  private constructor(repoObject: git.Repository, basepath: string) {
+  private constructor(repoObject: Repository, basepath: string) {
     assert(basepath != null);
     assert(repoObject !== null)
     this.basedir = basepath;
@@ -28,22 +27,39 @@ export class Repository {
     return path.basename(this.basedir); 
   }
 
-  public static async open(basepath: string) : Promise<Repository> {
-    return new Repository(
-      await git.Repository.open(
+  public static async open(basepath: string) : Promise<ChannelRepository> {
+    console.log('opening channel at basepath ', basepath)
+    return new ChannelRepository(
+      await Repository.open(
         path.resolve(basepath, '.git')), 
       basepath);
   }
 
-  public static async create(basepath: string) : Promise<Repository> {
-    return new Repository(
-      await git.Repository.open(
-        path.resolve(basepath, '.git')), 
+  public static async create(basepath: string) : Promise<ChannelRepository> {
+    const IsBareRepository : number = 0;
+    await fse.ensureDir(basepath);
+    return new ChannelRepository(
+      await Repository.init(
+        basepath, IsBareRepository),
       basepath);
   }
+
+  // TODO: implement
+  public async getCurrentHEAD() : Promise<string> { return null; }
+  public async getParentId(id: string): Promise<string> { return null; }
+  public async loadAllMessages() : Promise<Message[]> { return null; }
+  public async addCommit(
+    messageId: string, 
+    messagePayload: Buffer, 
+    date: number, 
+    parentId: string | null) : Promise<void> { return null; }
+  public async pullChanges(
+    onionAddress: string, 
+    mergeTimeFromSource: number | null = null) : Promise<number> { return null; }
+
 }
 
-type ReposMap = Map<string, git.Repository>
+type ReposMap = Map<string, Repository>
 
 /**
  * This type is reponsible for maintaining a consistentn channel history across
@@ -63,7 +79,7 @@ export class GitHistoryStore {
    * This is the SOCKS5 proxy config object that routes traffic 
    * through TOR network.
    */
-  private _proxySettings: git.ProxyOptions;
+  private _proxySettings: ProxyOptions;
 
   /**
    * This is the root directory where all channels have their repos stored.
@@ -72,11 +88,10 @@ export class GitHistoryStore {
    */
   private _basedir: string = `${os.homedir()}/ZBayChannels/`;
 
-  private constructor(proxySettings: git.ProxyOptions) {
+  private constructor(proxySettings: ProxyOptions) {
     assert(proxySettings !== null);
     this._proxySettings = proxySettings;
-    this._reposMap = new Map<string, git.Repository>()
-    this.ensurePathsExist([this._basedir]);
+    this._reposMap = new Map<string, Repository>();
   }
   
   /**
@@ -88,45 +103,66 @@ export class GitHistoryStore {
    * by default all channels are stored in $HOME/ZbayChannels with each channel having
    * its own separate directory and a distinct git repo.
    */
-  public static async open(proxySettings: git.ProxyOptions): Promise<GitHistoryStore> { 
+  public static async open(proxySettings: ProxyOptions): Promise<GitHistoryStore> { 
     let store = new GitHistoryStore(proxySettings);
+    await fse.ensureDir(store._basedir);
     for await (const repo of store.enumerateRepositories()) {
-      store._reposMap.set(repo.name(), repo)
+      store._reposMap.set(repo.name(), repo);
     }
     return store; 
   }
 
+  /**
+   * True if we the store is aware of a given channel, otherwise false.
+   * 
+   * @param channelName the channel uniqueId as known to the user
+   */
+  public channelExists(channelName: string) : boolean {
+    return this._reposMap.has(channelName);
+  }
 
-  public async getCurrentHEAD(repoName: string) : Promise<string> { return null; }
-  public async createRepository(name: string) : Promise<git.Repository> { return null; }
-  public async getParentId(id: string): Promise<string> { return null; }
-  public async loadAllMessages(channelId: string) : Promise<[Message]> { return null; }
-  
-  public async addCommit(
-    repoName: string, 
-    messageId: string, 
-    messagePayload: Buffer, 
-    date: number, 
-    parentId: string | null) : Promise<void> { return null; }
-  
-  public async pullChanges(
-    onionAddress: string, 
-    repoName: string, 
-    mergeTimeFromSource: number | null = null) : Promise<number> { return null; }
+  /**
+   * Creates a new channel store for a non-existing channel.
+   * 
+   * If the channel already exists, this function will throw and
+   * leave the object is a valid state.
+   */
+  public async createChannel(channelName: string) : Promise<ChannelRepository> {
+    assert(channelName !== null);
 
-    
-  private async ensurePathsExist(paths: string[]) {
-    for (const path of paths) {
-      if (!(await fs.stat(path)).isDirectory()) {
-        await fs.mkdir(path, { recursive: true });       
-      }
+    if (this.channelExists(channelName)) {
+      throw new Error(`channel ${channelName} already exists`);
     }
+
+    // create a new repo and track it in the repos map
+    const repo = await ChannelRepository.create(
+      path.join(this._basedir, channelName));
+    this._reposMap.set(repo.name(), repo);
+    return repo;
+  }
+
+  public async removeChannel(channel: string | ChannelRepository) : Promise<void> {
+    let channelName: string;
+    if (typeof channel === 'string') {
+      channelName = channel;
+    } else if (channel instanceof ChannelRepository) {
+      channelName = channel.name();
+    }
+
+    if (!this.channelExists(channelName)) {
+      throw new Error(`channel ${channelName} does not exist`);
+    }
+    
+    await fse.remove(
+      this._reposMap.get(channelName).basedir);
+    this._reposMap.delete(channelName);
   }
 
   private async* enumerateRepositories() {
     for (const direntry of await fs.readdir(this._basedir)) {
-      if ((await fs.stat(direntry)).isDirectory()) {
-        yield Repository.open(direntry)
+      const channelBasedir = path.join(this._basedir, direntry);
+      if ((await fs.stat(channelBasedir)).isDirectory()) {
+        yield ChannelRepository.open(channelBasedir);
       }
     }
   }
