@@ -3,11 +3,15 @@ import * as fs from 'fs/promises'
 import * as os from 'os'
 import * as path from 'path'
 import { assert } from 'console';
-import { Repository, ProxyOptions } from 'nodegit'
+import { 
+  Repository, ProxyOptions, 
+  Reference, Signature, Revwalk
+} from 'nodegit'
 
 export class Message {
-  timestamp: number;
-  message: string;
+  id: string;
+  timestamp: Date;
+  content: Buffer;
   signature: string;
 }
 
@@ -38,21 +42,94 @@ export class ChannelRepository {
   public static async create(basepath: string) : Promise<ChannelRepository> {
     const IsBareRepository : number = 0;
     await fse.ensureDir(basepath);
+
     return new ChannelRepository(
       await Repository.init(
-        basepath, IsBareRepository),
+        basepath, IsBareRepository), 
       basepath);
   }
 
+  /**
+   * Returns the hash of the change that the local repository considers
+   * as most recent. It doesn't nesessarily mean that it is the globally
+   * known top of the tree. 
+   */
+  public async topOfTree() : Promise<string> { 
+    try {
+      const headCommit = await Reference.nameToId(this.repoObject, 'HEAD');
+      if (headCommit === null || headCommit.isZero()) {
+        return null;
+      } else {
+        return headCommit.tostrS();
+      }
+    } catch {
+      // empty repo, no history yet
+      return null;
+    }
+  }
+
+  /**
+   * Appends a new message to the git history, by storing it
+   * as a file in the channel directory and creating a new commit
+   * for it. On successfull save this method returns the newly
+   * created commit id, which is also the new TopOfTree commitid.
+   * 
+   * @param message The new message to be appended to history
+   */
+  public async appendMessage(message: Message) : Promise<string> {
+    assert(message !== null);
+    assert(message.id !== null);
+    assert(message.content !== null);
+
+    const messagePath = path.join(this.basedir, message.id);
+    
+    await fs.writeFile(messagePath, message.content);
+    await fs.utimes(messagePath, message.timestamp, message.timestamp);
+    
+    const repoIndex = await this.repoObject.refreshIndex();
+    await repoIndex.addByPath(message.id);
+    await repoIndex.write();
+    
+    const author = Signature.now('Zbay', 'zbay@unknown.world');
+    const committer = Signature.now('Zbay', 'zbay@unknown.world');
+    const maybeParent = await this.topOfTree()
+
+    const commit = await this.repoObject.createCommitOnHead(
+      [message.id], author, committer, 
+      `messageId: ${message.id}, parentId: ${maybeParent}`);
+
+    return commit.tostrS();
+  }
+
+  /**
+   * Iterates over all historical messages in a given order, returnning a new 
+   * message on each step.
+   * 
+   * The basis for ordering messages is ther commit timestamp and commit order.
+   * 
+   * @param oldestFirst if set to true messages will be returned in an ascending timestamp order otherwise
+   * newest messages will be returned first.
+   */
+  public async* enumerateMessages(oldestFirst: boolean = false) {
+    var masterCommit = await this.repoObject.getMasterCommit();
+    if (masterCommit !== null) {
+      const historySize = masterCommit.parentcount();
+
+      if (oldestFirst) { // oldest to newest
+        for (let i = historySize - 1; i >= 0; --i) {
+          yield masterCommit.parent(i);
+        }
+        yield masterCommit;
+      } else { // newest to oldest
+        yield masterCommit;
+        for (let i = 0; i < historySize; ++i) {
+          yield masterCommit.parent(i);
+        }
+      }
+    }
+  }
+
   // TODO: implement
-  public async getCurrentHEAD() : Promise<string> { return null; }
-  public async getParentId(id: string): Promise<string> { return null; }
-  public async loadAllMessages() : Promise<Message[]> { return null; }
-  public async addCommit(
-    messageId: string, 
-    messagePayload: Buffer, 
-    date: number, 
-    parentId: string | null) : Promise<void> { return null; }
   public async pullChanges(
     onionAddress: string, 
     mergeTimeFromSource: number | null = null) : Promise<number> { return null; }
@@ -73,13 +150,13 @@ export class GitHistoryStore {
    * Since each channel has its own repo and history, we use this 
    * structure to keep track of all known channels.
    */
-  private _reposMap: ReposMap;
+  private reposMap: ReposMap;
 
   /**
    * This is the SOCKS5 proxy config object that routes traffic 
    * through TOR network.
    */
-  private _proxySettings: ProxyOptions;
+  private proxySettings: ProxyOptions;
 
   /**
    * This is the root directory where all channels have their repos stored.
@@ -90,8 +167,8 @@ export class GitHistoryStore {
 
   private constructor(proxySettings: ProxyOptions) {
     assert(proxySettings !== null);
-    this._proxySettings = proxySettings;
-    this._reposMap = new Map<string, Repository>();
+    this.proxySettings = proxySettings;
+    this.reposMap = new Map<string, Repository>();
   }
   
   /**
@@ -107,7 +184,7 @@ export class GitHistoryStore {
     let store = new GitHistoryStore(proxySettings);
     await fse.ensureDir(store._basedir);
     for await (const repo of store.enumerateRepositories()) {
-      store._reposMap.set(repo.name(), repo);
+      store.reposMap.set(repo.name(), repo);
     }
     return store; 
   }
@@ -118,7 +195,7 @@ export class GitHistoryStore {
    * @param channelName the channel uniqueId as known to the user
    */
   public channelExists(channelName: string) : boolean {
-    return this._reposMap.has(channelName);
+    return this.reposMap.has(channelName);
   }
 
   /**
@@ -137,7 +214,7 @@ export class GitHistoryStore {
     // create a new repo and track it in the repos map
     const repo = await ChannelRepository.create(
       path.join(this._basedir, channelName));
-    this._reposMap.set(repo.name(), repo);
+    this.reposMap.set(repo.name(), repo);
     return repo;
   }
 
@@ -154,8 +231,8 @@ export class GitHistoryStore {
     }
     
     await fse.remove(
-      this._reposMap.get(channelName).basedir);
-    this._reposMap.delete(channelName);
+      this.reposMap.get(channelName).basedir);
+    this.reposMap.delete(channelName);
   }
 
   private async* enumerateRepositories() {
