@@ -10,23 +10,23 @@ const main = async () => {
   console.log(newChannel)
   console.log(gitStore)
 
-  const message1 = <ChannelMessage> {
-    id: "message-1",
+  const message1 = new ChannelMessage({
+    id: 'message-1',
     timestamp: new Date(Date.now()),
     content: Buffer.from('this is a test message'),
     signature: 'some-signature'
-  };
+  });
 
   console.log('appending message 1')
   const commit1 = await newChannel.appendMessage(message1);
   console.log('message1 commit ', commit1);
 
-  const message2 = <ChannelMessage> {
-    id: "message-2",
+  const message2 = new ChannelMessage({
+    id: 'message-2',
     timestamp: new Date(Date.now()),
     content: Buffer.from('this is a second test message'),
     signature: 'some-signature-2'
-  };
+  });
 
   console.log('appending message 2')
   const commit2 = await newChannel.appendMessage(message2);
@@ -45,9 +45,9 @@ const main = async () => {
     console.log('hisorical commit (g): ', commit.id().tostrS())
   }
   
-  //console.log('deleting channel')
-  //await gitStore.removeChannel(newChannel)
-  //console.log(gitStore)
+  console.log('deleting channel')
+  await gitStore.removeChannel(newChannel)
+  console.log(gitStore)
 }
 
 main()
