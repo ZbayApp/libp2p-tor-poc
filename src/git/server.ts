@@ -6,7 +6,7 @@ import { parentPort, workerData } from 'worker_threads'
 
 const GitServer = require('node-git-server');
 
-class GitHistoryServer {
+export class GitHistoryServer {
   private port: number = 5002;
   private basedir: string = `${os.homedir()}/ZBayChannels/`;
   private repos = new GitServer(this.basedir);
@@ -30,5 +30,5 @@ class GitHistoryServer {
   }
 }
 
-const server = new GitHistoryServer();
-server.start();
+//const server = new GitHistoryServer();
+//server.start();

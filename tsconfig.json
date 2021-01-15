@@ -5,7 +5,8 @@
     "module": "commonjs",
     "declaration": true,
     "outDir": "./lib",
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "experimentalDecorators": true
   },
   "typeRoots": [
     "./@types",

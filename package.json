@@ -55,6 +55,7 @@
     "peer-id": "^0.14.0",
     "prettier": "^2.1.0",
     "prettier-config-standard": "^1.0.1",
+    "protobufjs": "^6.10.2",
     "protons": "^2.0.0",
     "random-timestamps": "^1.0.1",
     "simple-git": "^2.24.0",

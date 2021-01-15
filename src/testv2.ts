@@ -1,8 +1,8 @@
-import { GitHistoryStore, Message } from './git'
+import { GitHistoryClient, ChannelMessage } from './git'
 
 const main = async () => {
   console.log('opening git history store')
-  const gitStore = await GitHistoryStore.open(null)
+  const gitStore = await GitHistoryClient.open(null)
   console.log(gitStore)
 
   console.log('creating new channel')
@@ -10,7 +10,7 @@ const main = async () => {
   console.log(newChannel)
   console.log(gitStore)
 
-  const message1 = <Message> {
+  const message1 = <ChannelMessage> {
     id: "message-1",
     timestamp: new Date(Date.now()),
     content: Buffer.from('this is a test message'),
@@ -21,7 +21,7 @@ const main = async () => {
   const commit1 = await newChannel.appendMessage(message1);
   console.log('message1 commit ', commit1);
 
-  const message2 = <Message> {
+  const message2 = <ChannelMessage> {
     id: "message-2",
     timestamp: new Date(Date.now()),
     content: Buffer.from('this is a second test message'),
@@ -45,9 +45,9 @@ const main = async () => {
     console.log('hisorical commit (g): ', commit.id().tostrS())
   }
   
-  console.log('deleting channel')
-  await gitStore.removeChannel(newChannel)
-  console.log(gitStore)
+  //console.log('deleting channel')
+  //await gitStore.removeChannel(newChannel)
+  //console.log(gitStore)
 }
 
 main()
