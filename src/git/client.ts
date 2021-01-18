@@ -19,7 +19,6 @@ export class ChannelRepository {
   private constructor(repoObject: Repository, basepath: string, proxySettings: ProxyOptions) {
     assert(basepath !== null);
     assert(repoObject !== null);
-    assert(proxySettings !== null);
     this.basedir = basepath;
     this.repoObject = repoObject;
     this.proxySettings = proxySettings;
@@ -75,26 +74,10 @@ export class ChannelRepository {
    */
   public async appendMessage(message: ChannelMessage) : Promise<string> {
     assert(message !== null);
-    assert(message.id !== null);
-    assert(message.content !== null);
-
-    const messagePath = path.join(this.basedir, message.id);
-    
-    await fs.writeFile(messagePath, ChannelMessage.encode(message).finish());
-    await fs.utimes(messagePath, message.timestamp, message.timestamp);
-    
-    const repoIndex = await this.repoObject.refreshIndex();
-    await repoIndex.addByPath(message.id);
-    await repoIndex.write();
-    
     const author = Signature.now('Zbay', 'zbay@unknown.world');
     const committer = Signature.now('Zbay', 'zbay@unknown.world');
-    const maybeParent = await this.topOfTree()
-
-    const commit = await this.repoObject.createCommitOnHead(
-      [message.id], author, committer, 
-      `messageId: ${message.id}, parentId: ${maybeParent}`);
-
+    const commit = await this.repoObject.createCommitOnHead([], author, committer, 
+      Buffer.from(ChannelMessage.encode(message).finish()).toString('base64'));
     return commit.tostrS();
   }
 
@@ -102,30 +85,26 @@ export class ChannelRepository {
    * Iterates over all historical messages in a given order, returnning a new 
    * message on each step.
    * 
-   * The basis for ordering messages is ther commit timestamp and commit order.
-   * 
-   * @param oldestFirst if set to true messages will be returned in an ascending timestamp order otherwise
-   * newest messages will be returned first.
+   * messages are enumerated from newest to oldest
    */
-  public async* enumerateMessages(oldestFirst: boolean = false) {
-    var masterCommit = await this.repoObject.getMasterCommit();
-    if (masterCommit !== null) {
-      const historySize = masterCommit.parentcount();
+  public async* enumerateMessages() {
+    
+    // converts a base64 commit message to an instance of a message
+    const decodeMessage = (encodedMessage: string) : ChannelMessage => 
+      ChannelMessage.decode(Buffer.from(encodedMessage, 'base64'));
 
-      if (oldestFirst) { // oldest to newest
-        for (let i = historySize - 1; i >= 0; --i) {
-          yield masterCommit.parent(i);
-        }
-        yield masterCommit;
-      } else { // newest to oldest
-        yield masterCommit;
-        for (let i = 0; i < historySize; ++i) {
-          yield masterCommit.parent(i);
-        }
+    var commitCursor = await this.repoObject.getMasterCommit();
+    while (commitCursor !== null) {
+      yield decodeMessage(commitCursor.message());
+      if (commitCursor.parentcount() != 0) {
+        commitCursor = await commitCursor.parent(0);
+      } else {
+        commitCursor = null;
       }
     }
   }
 
+  // TODO: This needs lots of discussions and design. not ready yet.
   public async synchronize(onionAddress: string) : Promise<number> { 
     const mergeTimestamp = Date.now();
     const remoteUrl = `git://${onionAddress}/${this.name()}/`;
@@ -174,7 +153,6 @@ export class GitHistoryClient {
   private basedir: string = `${os.homedir()}/ZBayChannels/`;
 
   private constructor(proxySettings: ProxyOptions) {
-    assert(proxySettings !== null);
     this.proxySettings = proxySettings;
     this.reposMap = new Map<string, Repository>();
   }

@@ -7,7 +7,7 @@ export class ChannelMessage extends Message<ChannelMessage> {
   id: string;
 
   @Field.d(2, "uint64")
-  timestamp: Date;
+  timestamp: number;
 
   @Field.d(3, "bytes")
   content: Buffer;

@@ -1,4 +1,6 @@
-import { GitHistoryClient, ChannelMessage } from './git'
+import {
+  GitHistoryClient,
+  ChannelMessage } from './git'
 
 const main = async () => {
   console.log('opening git history store')
@@ -10,44 +12,36 @@ const main = async () => {
   console.log(newChannel)
   console.log(gitStore)
 
-  const message1 = new ChannelMessage({
-    id: 'message-1',
-    timestamp: new Date(Date.now()),
-    content: Buffer.from('this is a test message'),
-    signature: 'some-signature'
-  });
-
-  console.log('appending message 1')
-  const commit1 = await newChannel.appendMessage(message1);
-  console.log('message1 commit ', commit1);
-
-  const message2 = new ChannelMessage({
-    id: 'message-2',
-    timestamp: new Date(Date.now()),
-    content: Buffer.from('this is a second test message'),
-    signature: 'some-signature-2'
-  });
-
-  console.log('appending message 2')
-  const commit2 = await newChannel.appendMessage(message2);
-  console.log('message2 commit ', commit2);
+  for (let i = 0; i < 100; ++i) {
+    const message = new ChannelMessage({
+      id: `message-${i}`,
+      timestamp: Date.now(),
+      content: Buffer.from(`this is a test message number ${i}`),
+      signature: `some-signature-${i}`
+    })
+  
+    const commit = await newChannel.appendMessage(message)
+    console.log(`appending message ${i}: `, commit)
+  }
 
   const channelToT = await newChannel.topOfTree()
   console.log('channel tot: ', channelToT)
 
   console.log('enumerating history newestToOldest')
   for await (const commit of newChannel.enumerateMessages()) {
-    console.log('hisorical commit (g): ', commit.id().tostrS())
+    console.log('hisorical commit (g): ', commit)
   }
 
   console.log('enumerating history oldestToNewest')
-  for await (const commit of newChannel.enumerateMessages(true)) {
-    console.log('hisorical commit (g): ', commit.id().tostrS())
+  for await (const commit of newChannel.enumerateMessages()) {
+    console.log('hisorical commit (g): ', commit)
   }
   
-  console.log('deleting channel')
-  await gitStore.removeChannel(newChannel)
-  console.log(gitStore)
+  // console.log('deleting channel')
+  // await gitStore.removeChannel(newChannel)
+  // console.log(gitStore)
+
+  // const server = new GitHistoryServer();
 }
 
 main()
