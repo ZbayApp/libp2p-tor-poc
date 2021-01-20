@@ -98,9 +98,6 @@ class WebsocketsOverTor extends WebSockets {
     const server = createServer(options, async (stream, request) => {
       let maConn, conn
       let query = url.parse(request.url, true).query
-      // console.log('request', request)
-      // console.log('query', query)
-      console.log('query', query.remoteAddress)
       try {
         maConn = toConnection(stream, { remoteAddr: multiaddr(query.remoteAddress.toString()) })
         const peer = { 
@@ -111,7 +108,6 @@ class WebsocketsOverTor extends WebSockets {
         log('new inbound connection %s', maConn.remoteAddr)
         conn = await upgrader.upgradeInbound(maConn)
       } catch (err) {
-        console.log('error', err)
         log.error('inbound connection failed to upgrade', err)
         return maConn && maConn.close()
       }

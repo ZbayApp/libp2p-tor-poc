@@ -132,7 +132,7 @@ export class ConnectionsManager {
       this.libp2p,
       channelAddress,
       async ({ from, message }) => {
-        console.log('message', message)
+      // console.log('message', message)
       //   const release = await mutex.acquire()
       //   try {
       //   let peerRepositoryOnionAddress = this.onionAddressesBook.get(from)
