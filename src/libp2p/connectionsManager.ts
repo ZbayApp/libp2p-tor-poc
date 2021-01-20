@@ -124,7 +124,7 @@ export class ConnectionsManager {
       peerId: peerId.toB58String()
     }
   }
-  public subscribeForTopic = async ({ channelAddress, git, io }: IChannelSubscription) => {
+  public subscribeForTopic = async ({ channelAddress }) => {
     const channelSubscription = this.chatRooms.get(channelAddress)
     if (channelSubscription) return
     const mutex = new Mutex()
@@ -132,52 +132,53 @@ export class ConnectionsManager {
       this.libp2p,
       channelAddress,
       async ({ from, message }) => {
-        const release = await mutex.acquire()
-        try {
-        let peerRepositoryOnionAddress = this.onionAddressesBook.get(from)
-        if (!peerRepositoryOnionAddress) {
-          const onionAddressKey = await this.createOnionPeerId(from)
-          peerRepositoryOnionAddress = await this.getOnionAddress(onionAddressKey)
-          this.onionAddressesBook.set(from, peerRepositoryOnionAddress)
-        }
-        switch (message.typeLibp2p) {
-          case Request.MessageType.SEND_MESSAGE:
-            const currentHEAD = await git.getCurrentHEAD(channelAddress)
-            socketMessage(io, { message, channelAddress })
-            if (message.currentHEAD === currentHEAD) {
-              await git.addCommit(message.channelId, message.id, message.raw, message.createdAt, message.parentId)
-            } else {
-              const mergeTime = await git.pullChanges(this.onionAddressesBook.get(from), channelAddress)
-              const orderedMessages = await git.loadAllMessages(channelAddress)
-              loadAllMessages(io, orderedMessages, channelAddress)
-              const newHead = await git.getCurrentHEAD(channelAddress)
-              const mergeResult = message.currentHEAD === newHead
-              if (!mergeResult) {
-                const messagePayload = {
-                  created: new Date(mergeTime),
-                  parentId: (~~(Math.random() * 1e9)).toString(36) + Date.now(),
-                  channelId: channelAddress,
-                  currentHEAD: newHead
-                }
-                const chat = this.chatRooms.get(`${channelAddress}`)
-                await chat.chatInstance.sendNewMergeCommit(messagePayload)
-              }
-            }
-            break
-          case Request.MessageType.MERGE_COMMIT_INFO:
-            const head = await git.getCurrentHEAD(message.channelId)
-            if (head !== message.currentHEAD && from !== this.libp2p.peerId.toB58String()) {
-              await git.pullChanges(this.onionAddressesBook.get(from), message.channelId, message.created)
-              const orderedMessages = await git.loadAllMessages(channelAddress)
-              loadAllMessages(io, orderedMessages, channelAddress)
-            }
-            break
-      }
-      release()
-      } catch (err) {
-        console.log(err)
-        release()
-      }
+        console.log('message', message)
+      //   const release = await mutex.acquire()
+      //   try {
+      //   let peerRepositoryOnionAddress = this.onionAddressesBook.get(from)
+      //   if (!peerRepositoryOnionAddress) {
+      //     const onionAddressKey = await this.createOnionPeerId(from)
+      //     peerRepositoryOnionAddress = await this.getOnionAddress(onionAddressKey)
+      //     this.onionAddressesBook.set(from, peerRepositoryOnionAddress)
+      //   }
+      //   switch (message.typeLibp2p) {
+      //     case Request.MessageType.SEND_MESSAGE:
+      //       const currentHEAD = await git.getCurrentHEAD(channelAddress)
+      //       socketMessage(io, { message, channelAddress })
+      //       if (message.currentHEAD === currentHEAD) {
+      //         await git.addCommit(message.channelId, message.id, message.raw, message.createdAt, message.parentId)
+      //       } else {
+      //         const mergeTime = await git.pullChanges(this.onionAddressesBook.get(from), channelAddress)
+      //         const orderedMessages = await git.loadAllMessages(channelAddress)
+      //         loadAllMessages(io, orderedMessages, channelAddress)
+      //         const newHead = await git.getCurrentHEAD(channelAddress)
+      //         const mergeResult = message.currentHEAD === newHead
+      //         if (!mergeResult) {
+      //           const messagePayload = {
+      //             created: new Date(mergeTime),
+      //             parentId: (~~(Math.random() * 1e9)).toString(36) + Date.now(),
+      //             channelId: channelAddress,
+      //             currentHEAD: newHead
+      //           }
+      //           const chat = this.chatRooms.get(`${channelAddress}`)
+      //           await chat.chatInstance.sendNewMergeCommit(messagePayload)
+      //         }
+      //       }
+      //       break
+      //     case Request.MessageType.MERGE_COMMIT_INFO:
+      //       const head = await git.getCurrentHEAD(message.channelId)
+      //       if (head !== message.currentHEAD && from !== this.libp2p.peerId.toB58String()) {
+      //         await git.pullChanges(this.onionAddressesBook.get(from), message.channelId, message.created)
+      //         const orderedMessages = await git.loadAllMessages(channelAddress)
+      //         loadAllMessages(io, orderedMessages, channelAddress)
+      //       }
+      //       break
+      // }
+      // release()
+      // } catch (err) {
+      //   console.log(err)
+      //   release()
+      // }
     })
     this.chatRooms.set(channelAddress, { chatInstance: chat, mutex })
   }
@@ -284,7 +285,7 @@ export class ConnectionsManager {
       },
       modules: {
         transport: [WebsocketsOverTor],
-        peerDiscovery: [Bootstrap],
+        // peerDiscovery: [Bootstrap],
         streamMuxer: [Mplex],
         connEncryption: [NOISE],
         dht: KademliaDHT,
