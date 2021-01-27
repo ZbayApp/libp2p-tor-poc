@@ -12,10 +12,11 @@ const main = async () => {
   console.log(newChannel)
   console.log(gitStore)
 
+  const startingDate = new Date(2021, 1, 18, 21, 38, 0, 0)
   for (let i = 0; i < 100; ++i) {
     const message = new ChannelMessage({
       id: `message-${i}`,
-      timestamp: Date.now(),
+      timestamp: Math.floor(startingDate.setMinutes(startingDate.getMinutes() + i) / 1000),
       content: Buffer.from(`this is a test message number ${i}`),
       signature: `some-signature-${i}`
     })

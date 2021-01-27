@@ -11,6 +11,11 @@ import {
   Signature, FetchOptions, Cred
 } from 'nodegit'
 
+/**
+ * Represents the history of one channel stored locally on peer's disk.
+ * This repository can be synced with other revisions of the same channel stored on other
+ * peers.
+ */
 export class ChannelRepository {
   private basedir: string;
   private repoObject: Repository;
@@ -76,8 +81,12 @@ export class ChannelRepository {
     assert(message !== null);
     const author = Signature.now('Zbay', 'zbay@unknown.world');
     const committer = Signature.now('Zbay', 'zbay@unknown.world');
-    const commit = await this.repoObject.createCommitOnHead([], author, committer, 
-      Buffer.from(ChannelMessage.encode(message).finish()).toString('base64'));
+    const content = Buffer.from(ChannelMessage.encode(message).finish()).toString('base64');
+    const contentPath = `${this.basedir}/${message.id}`;
+    await fs.writeFile(contentPath, content);
+    await fs.utimes(contentPath, message.timestamp, message.timestamp);
+    const commit = await this.repoObject.createCommitOnHead(
+      [message.id], author, committer, content);
     return commit.tostrS();
   }
 
