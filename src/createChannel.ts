@@ -30,10 +30,10 @@ const main = async () => {
 
   let service1
   try {
-    // const staticOnionAddress = `PT0gZWQyNTUxOXYxLXNlY3JldDogdHlwZTAgPT0AAADQZeSBmBABj5X+4zo98d+zOfFEygXVYajYaTzthFtLa4muclClSkstifM4SQsaJlFkJN//FZsBfMSLTDPubgCP`
+    const staticOnionAddress = `PT0gZWQyNTUxOXYxLXNlY3JldDogdHlwZTAgPT0AAADQZeSBmBABj5X+4zo98d+zOfFEygXVYajYaTzthFtLa4muclClSkstifM4SQsaJlFkJN//FZsBfMSLTDPubgCP`
     service1 = tor.getServiceAddress(7788)
   } catch (e) {
-    service1 = (await tor.addService({ port: 7788 })).address
+    service1 = await (await tor.addNewService(7788,7788 )).onionAddress
   }
   console.log('service1', service1)
   const connectonsManager = new ConnectionsManager({
@@ -62,6 +62,6 @@ const main = async () => {
     console.log('here')
     await connectonsManager.sendMessage('abcd', io, message)
   }, 3000)
-}
+  }
 
 main()

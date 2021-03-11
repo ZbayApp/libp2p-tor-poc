@@ -29,7 +29,7 @@ const main = async () => {
     // const staticOnionAddress = `PT0gZWQyNTUxOXYxLXNlY3JldDogdHlwZTAgPT0AAADQZeSBmBABj5X+4zo98d+zOfFEygXVYajYaTzthFtLa4muclClSkstifM4SQsaJlFkJN//FZsBfMSLTDPubgCP`
     service1 = await tor.getServiceAddress(7788)
   } catch (e) {
-    service1 = await (await tor.addService({ port: 7788, secretKey: process.env.HIDDEN_SERVICE_SECRET })).address
+    service1 = await (await tor.addOnion({virtPort: 7788, targetPort: 7788, privKey: process.env.HIDDEN_SERVICE_SECRET}))
   }
   console.log('service1', service1)
 
@@ -45,7 +45,7 @@ const main = async () => {
   
   const connectonsManager = new ConnectionsManager({
     port: 7788,
-    host: service1,
+    host: service1 + '.onion',
     agentHost: 'localhost',
     agentPort: 9050
   })

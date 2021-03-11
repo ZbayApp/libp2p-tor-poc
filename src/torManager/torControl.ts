@@ -1,7 +1,3 @@
-/*jslint node:true*/
-
-'use strict'
-
 var net = require('net')
 var EventEmitter = require('events').EventEmitter
 
@@ -12,9 +8,6 @@ interface IOpts {
   persistent?: boolean
   path?: string
 }
-
-type Callback = (err: Error, status: string) => void
-
 class TorControl {
   opts: IOpts = {}
   private connect: (params: any, cb: any) => { any: any }
@@ -23,60 +16,51 @@ class TorControl {
   private isPersistent: any
   private setPersistent: any
   private eventEmitter: any = new EventEmitter()
-  private sendCommand: any = (command: string, cb: any, keepConnection: boolean) => {
+  private sendCommand: any = (
+    command: string,
+    keepConnection: boolean
+  ): Promise<{ code: number; messages: string[] }> => {
     return new Promise((resolve, reject) => {
-
       var self = this,
-      tryDisconnect = function (callback: any) {
-        if (keepConnection || self.isPersistent() || !self.connection) {
-          return callback()
+        tryDisconnect = function (callback: any) {
+          if (keepConnection || self.isPersistent() || !self.connection) {
+            return callback()
+          }
+          return self.disconnect(callback)
         }
-        return self.disconnect(callback)
-      }
-    return this.connect(null, function (err: any, connection: any) {
-      if (err) {
-        return cb(err)
-      }
-      connection.once('data', function (data: any) {
-        return tryDisconnect(function () {
-          let messages = [],
-          arr,
-          i
-          if (cb) {
+      return this.connect(null, function (err: any, connection: any) {
+        if (err) {
+          return reject(err)
+        }
+        connection.once('data', function (data: any) {
+          return tryDisconnect(function () {
+            let messages = []
+            let arr = []
             data = data.toString()
-            console.log(`this is shit ${/250/.test(data)}`)
+            console.log('dataaa', data)
             if (/250/.test(data)) {
-              console.log({ data })
-              
               arr = data.split(/\r?\n/)
-              
-              for (i = 0; i < arr.length; i += 1) {
+              for (let i = 0; i < arr.length; i += 1) {
                 if (arr[i] !== '') {
                   var message = arr[i]
                   messages.push(message)
                 }
               }
-              return cb(null, {
+              return resolve({
                 code: 250,
-                messages: messages,
-                data: data
+                messages: messages
               })
             }
-            return cb(new Error(data), {
-              code: parseInt(data.substr(0, 3), 10),
-              message: data.substr(4),
-              data: data
-            })
-          }
+            reject(new Error(data))
+          })
         })
+        connection.write(command + '\r\n')
       })
-      connection.write(command + '\r\n')
     })
-  })
   }
   constructor(opts: IOpts = {}) {
     var self = this
-    
+
     opts = opts || {}
 
     if (!opts.hasOwnProperty('path')) {
@@ -168,23 +152,20 @@ class TorControl {
     }
   }
 
-  public signal(signal: string, cb: Callback, keepConnection: boolean) {
-    return this.sendCommand('SIGNAL ' + signal, cb, keepConnection)
+  public async addOnion(request: string): Promise<{ code: number; messages: string[] }> {
+    return this.sendCommand('ADD_ONION ' + request)
   }
-  public signalReload(cb: Callback) {
-    return this.signal('RELOAD', cb, true)
+  public async delOnion(request: string): Promise<{ code: number; messages: string[] }> {
+    return this.sendCommand('DEL_ONION ' + request)
   }
-  public setConf(request: string, cb: Callback) {
-    return this.sendCommand('SETCONF ' + request, cb)
+  public signal(signal: string): Promise<{ code: number; messages: string[] }> {
+    return this.sendCommand('SIGNAL ' + signal)
   }
-  public resetConf(request: string, cb: Callback) {
-    return this.sendCommand('RESETCONF ' + request, cb)
+  public signalReload(): Promise<{ code: number; messages: string[] }> {
+    return this.signal('RELOAD')
   }
-  public getConf(request: string, cb: Callback) {
-    return this.sendCommand('GETCONF ' + request, cb)
-  }
-  public saveConf(request: string, cb: Callback) {
-    return this.sendCommand('SAVECONF ' + request, cb)
+  public async setConf(request: string): Promise<{ code: number; messages: string[] }> {
+    return this.sendCommand('SETCONF ' + request)
   }
 }
 

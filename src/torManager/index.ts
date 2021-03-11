@@ -1,12 +1,8 @@
-import * as fs from 'fs'
-import * as os from 'os'
 import * as child_process from 'child_process'
-import * as path from 'path'
-import { sleep } from '../sleep'
 import { TorControl } from './torControl'
 
 interface IService {
-  port: number
+  virtPort: number
   address: string
 }
 interface IConstructor {
@@ -20,7 +16,7 @@ export class Tor {
   settingsPath: string
   options?: child_process.SpawnOptionsWithoutStdio
   services: Map<number, IService>
-  torControl: any
+  torControl: TorControl
   constructor({ settingsPath, torPath, options }: IConstructor) {
     this.settingsPath = settingsPath
     this.torPath = torPath
@@ -28,7 +24,7 @@ export class Tor {
     this.services = new Map()
     this.torControl = new TorControl()
   }
-  public init = (timeout = 200000): Promise<void> =>
+  public init = (timeout = 20000): Promise<void> =>
     new Promise((resolve, reject) => {
       if (this.process) {
         throw new Error('Already initialized')
@@ -42,141 +38,59 @@ export class Tor {
         console.log(data.toString())
         if (data.toString().includes('100%')) {
           clearTimeout(id)
-          const data = fs.readFileSync(this.settingsPath, 'utf8').split('\n')
-          const services = data.filter(text => text.startsWith('#SERVICE_'))
-          for (const service of services) {
-            const port = parseInt(service.substring(9))
-            this.services.set(port, {
-              port,
-              address: this.getServiceAddress(port)
-            })
-          }
           resolve()
         }
       })
     })
 
-  public addService = async ({
-    port = 3333,
-    timeout = 8000,
-    overwrite = true,
-    secretKey = ''
-  }): Promise<IService> => {
-    if (this.process === null) {
-      throw new Error('Process is not initalized.')
-    }
-    if (this.services.get(port)) {
-      throw new Error('Service already exist')
-    }
+  public async setSocksPort(port: number): Promise<void> {
+    await this.torControl.setConf(`SocksPort="${port}"`)
+  }
 
-    if (
-      fs.existsSync(`${path.join.apply(null, [os.homedir(), `tor_service_${port}`])}`) &&
-      overwrite
-    ) {
-      fs.rmdirSync(`${path.join.apply(null, [os.homedir(), `tor_service_${port}`])}`, {
-        recursive: true
-      })
-    }
+  public async setHttpTunnelPort(port: number): Promise<void> {
+    await this.torControl.setConf(`HTTPTunnelPort="${port}"`)
+  }
 
-    const homePath = path.join.apply(null, [os.homedir()])
-
-    const newServices = `HiddenServiceDir="${path.join.apply(null, [
-      homePath,
-      `zbay_tor`
-    ]).replace(/\\/g, '/')}" HiddenServicePort="80 127.0.0.1:3435" HiddenServiceDir="${path.join.apply(null, [
-      homePath,
-      `tor_service_${port}`
-    ]).replace(/\\/g, '/')}" HiddenServicePort="${port} 127.0.0.1:${port}"`
-    console.log(newServices)
-    console.log(newServices.replace(/\\/g, '/'))
-
-    this.torControl.setConf(newServices.replace(/\\/g, '/'), function (err: any, status: any) {
-      if (err) {
-        return console.error(err)
-      }
-      console.log(status.messages.join(' - '))
+  public async addOnion({ virtPort, targetPort, privKey }: { virtPort: number, targetPort: number, privKey: string }): Promise<string> {
+    const status = await this.torControl.addOnion(
+      `${privKey} Flags=Detach Port=${virtPort},127.0.0.1:${targetPort}`
+    )
+    const onionAddress = status.messages[0].replace('250-ServiceID=', '')
+    this.services.set(virtPort, {
+      virtPort,
+      address: onionAddress
     })
+    return onionAddress
+  }
 
-    if (secretKey) {
-      //console.log('env', process.env.HIDDEN_SERVICE_SECRET)
-      const secretString = Buffer.from(secretKey, 'base64')
-      //console.log('string', secretString)
-      fs.mkdirSync(`${path.join.apply(null, [os.homedir(), `tor_service_${port}`])}`, {
-        recursive: true
-      })
-      fs.chmodSync(`${path.join.apply(null, [os.homedir(), `tor_service_${port}`])}`, '0700')
-      fs.writeFileSync(
-        `${path.join.apply(null, [os.homedir(), `tor_service_${port}`, `hs_ed25519_secret_key`])}`,
-        secretString,
-        'utf8'
-      )
-    }
-    const id = setTimeout(() => {
-      throw new Error('Timeout')
-    }, timeout)
-    while (true) {
-      let address: string | null = null
-      try {
-        address = this.getServiceAddress(port)
-      } catch (error) {
-        await sleep()
-        continue
-      }
+  public async deleteOnion(serviceId: string): Promise<void> {
+    await this.torControl.delOnion(serviceId)
+  }
 
-      if (address === null) {
-        await sleep()
-        continue
-      }
-      clearTimeout(id)
-      this.services.set(port, { port, address: address.trim() })
-      return { port, address }
+  public async addNewService(virtPort:number, targetPort: number): Promise<{onionAddress: string, privateKey: string}> {
+    const status = await this.torControl.addOnion(
+      `NEW:BEST Flags=Detach Port=${virtPort},127.0.0.1:${targetPort}`
+    )
+
+    const onionAddress = status.messages[0].replace('250-ServiceID=', '')
+    const privateKey = status.messages[1].replace('250-PrivateKey=', '')
+    this.services.set(virtPort, {
+      virtPort,
+      address: onionAddress
+    })
+    return {
+      onionAddress,
+      privateKey
     }
   }
-  public killService = async ({ port = 3333, deleteKeys = true }): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      if (this.process === null) {
-        throw new Error('Process is not initalized.')
-      }
-      if (!this.services.get(port)) {
-        throw new Error('Service does not exist.')
-      }
-      const homePath = path.join.apply(null, [os.homedir()])
 
-      const newServices = `HiddenServiceDir="${path.join.apply(null, [
-        homePath,
-        `zbay_tor`
-      ]).replace(/\\/g, '/')}" HiddenServicePort="80 127.0.0.1:3435"`
-
-      this.services.delete(port)
-      if (
-        fs.existsSync(`${path.join.apply(null, [os.homedir(), `tor_service_${port}`])}`) &&
-        deleteKeys
-      ) {
-        fs.rmdirSync(`${path.join.apply(null, [os.homedir(), `tor_service_${port}`])}`, {
-          recursive: true
-        })
-      }
-      this.torControl.setConf(newServices, function (err: any, status: any) {
-        if (err) {
-          reject(console.error(err))
-        }
-        resolve(status.messages.join(' - '))
-      })
-    })
-  }
   public getServiceAddress = (port: number): string => {
-    try {
-      const address = fs
-        .readFileSync(
-          `${path.join.apply(null, [os.homedir(), `tor_service_${port}`, 'hostname'])}`,
-          'utf8'
-        )
-        .replace(/[\r\n]+/gm, '')
-      return address
-    } catch (error) {
-      throw new Error('Service does not exist')
+    if (this.services.get(port).address) {
+      return this.services.get(port).address
     }
+    throw new Error('cannot get service addres')
   }
+
   public kill = (): Promise<void> =>
     new Promise((resolve, reject) => {
       if (this.process === null) {
