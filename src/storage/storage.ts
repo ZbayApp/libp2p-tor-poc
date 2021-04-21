@@ -48,6 +48,55 @@ interface IPublicKey {
 }
 type IMessageThread = string
 
+class BaseStore<T> {
+  private name: string
+  private accessController: any
+  private db: any
+  private orbitdb: OrbitDB
+  protected dbType: string
+
+  constructor(orbitdb: OrbitDB, name: string, accessController: any) {
+    this.orbitdb = orbitdb
+    this.name = name
+  }
+
+  private getStoreFunc() {
+    const a = {
+      keyvalue: this.orbitdb.keyvalue,
+      eventStore: this.orbitdb.eventlog
+    }
+    return a[this.dbType]
+  }
+
+  public async create() {
+    console.log('creating db')
+    this.db = await this.getStoreFunc()<T>(this.name, {
+      accessController: this.accessController
+    })
+    this.attachEvents()
+    await this.db.load()
+    return this
+  }
+
+  public attachEvents() {
+    this.db.events.on('replicated', () => {
+      console.log('REPLICATED CHANNELS')
+    })
+  }
+
+}
+
+
+class ChannelsStore<T> extends BaseStore<T> {
+  dbType: string = 'keyvalue'
+}
+
+const AccessControllerAllowAll = {
+  write: ['*']
+}
+
+
+
 export class Storage {
   constructor(zbayDir: string) {
     this.zbayDir = zbayDir
@@ -78,9 +127,14 @@ export class Storage {
     })
 
     this.orbitdb = await OrbitDB.createInstance(this.ipfs, { directory: orbitDbDir })
-    await this.createDbForChannels()
-    await this.createDbForDirectMessages()
-    await this.createDbForMessageThreads()
+
+    const publicChannels = new ChannelsStore<IZbayChannel>(this.orbitdb, 'zbay-public-channels', AccessControllerAllowAll).create()
+    const messageThreads = new ChannelsStore<IMessageThread>(this.orbitdb, 'message-threads', AccessControllerAllowAll).create()
+    const directMessages = new ChannelsStore<IPublicKey>(this.orbitdb, 'direct-messages', AccessControllerAllowAll).create()
+
+    // await this.createDbForChannels()
+    // await this.createDbForDirectMessages()
+    // await this.createDbForMessageThreads()
     await this.subscribeForAllChannels()
     await this.subscribeForAllDirectMessagesThreads()
     // await this.subscribeForAllMessageThreads()
