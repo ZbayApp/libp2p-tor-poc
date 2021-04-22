@@ -48,22 +48,40 @@ interface IPublicKey {
 }
 type IMessageThread = string
 
+// class StoreEventsHandler {
+//   public attach(events) {}
+// }
+
+// class IOEventsHandler extends StoreEventsHandler {
+//   protected io: any
+//   protected events
+
+//   constructor(io: any) {
+//     super()
+//     this.io = io
+//   }
+
+// }
+
 class BaseStore<T> {
-  private name: string
+  public name: string
   private accessController: any
-  private db: any
-  private orbitdb: OrbitDB
+  protected db: any
+  protected orbitdb: OrbitDB
   protected dbType: string
+  public events: any
+  // protected eventsHandler: StoreEventsHandler
 
   constructor(orbitdb: OrbitDB, name: string, accessController: any) {
     this.orbitdb = orbitdb
     this.name = name
+    this.accessController = accessController
   }
 
-  private getStoreFunc() {
+  protected getStoreFunc() {
     const a = {
       keyvalue: this.orbitdb.keyvalue,
-      eventStore: this.orbitdb.eventlog
+      eventStore: this.orbitdb.log
     }
     return a[this.dbType]
   }
@@ -75,7 +93,7 @@ class BaseStore<T> {
     })
     this.attachEvents()
     await this.db.load()
-    return this
+    return this.db
   }
 
   public attachEvents() {
@@ -87,8 +105,109 @@ class BaseStore<T> {
 }
 
 
+
 class ChannelsStore<T> extends BaseStore<T> {
   dbType: string = 'keyvalue'
+}
+
+class ChannelMessagesStore<T> extends BaseStore<T> {
+  dbType: string = 'eventStore'
+  protected channelDb: any
+  protected repos: Map<String, IRepo>
+  
+
+  constructor(orbitdb: OrbitDB, name: string, accessController: any, channelDb: any, repos: Map<String, IRepo>) {
+    super(orbitdb, name, accessController)
+    this.channelDb = channelDb
+    this.repos = repos
+    // this.eventsHandler = eventsHandler
+  }
+
+  private getAllMessages(): IMessage[] {
+    return this.db
+      .iterator({ limit: -1 })
+      .collect()
+      .map(e => e.payload.value)
+  }
+
+  async initAllChannels() {
+    await Promise.all(Object.values(this.channelDb.all).map(async channel => {
+      if (!this.repos.has(channel.address)) {
+        await this.createChannel(channel.address, channel)
+      }
+    }))
+  }
+
+  private async createChannel(
+    channelAddress: string,
+    channelData?: IChannelInfo
+  ): Promise<EventStore<IMessage>> {
+    this.db = await this.getStoreFunc()<IMessage>(
+      `${this.name}.${channelAddress}`,
+      {
+        accessController: {
+          write: ['*']
+        }
+      }
+    )
+    this.events = this.db.events
+    await this.db.load()
+
+    const channel = this.channelDb.get(channelAddress)
+    if (!channel) {
+      await this.channelDb.put(channelAddress, {
+        orbitAddress: `/orbitdb/${this.db.address.root}/${this.db.address.path}`,
+        address: channelAddress,
+        ...channelData
+      })
+      console.log(`Created channel ${channelAddress}`)
+    }
+    this.repos.set(channelAddress, { db: this.db, eventsAttached: false })
+    return this.db
+  }
+
+  public attachEvents() {
+    // this.eventsHandler.on('write', ())
+    this.db.events.on('write', (_address, entry) => {
+        console.log('Writing to messages db')
+
+        socketMessage(io, { message: entry.payload.value, channelAddress })  // delegate to EventsHandler
+      })
+      this.db.events.on('replicated', () => {
+        console.log('Message replicated')
+        loadAllMessages(io, this.getAllMessages(), channelAddress)  // delegate to EventsHandler
+      })
+  }
+
+  public async subscribe(
+    channelAddress: string,
+    channelInfo?: IChannelInfo
+  ): Promise<void> {
+    console.log('Subscribing to channel ', channelAddress)
+    let db: EventStore<IMessage>
+    let repo = this.repos.get(channelAddress)
+
+    if (repo) {
+      db = repo.db
+    } else {
+      db = await this.createChannel(channelAddress, channelInfo)
+      if (!db) {
+        console.log(`Can't subscribe to channel ${channelAddress}`)
+        return
+      }
+      repo = this.repos.get(channelAddress)
+    }
+
+    if (repo && !repo.eventsAttached) {
+      // this.eventsHandler.attach(db.events)
+      this.attachEvents()
+      console.log('Subscribing to channel ', channelAddress)
+      repo.eventsAttached = true
+      loadAllMessages(io, this.getAllMessages(), channelAddress)  // delegate to EventsHandler
+      console.log('Subscription to channel ready', channelAddress)
+    }
+  }
+
 }
 
 const AccessControllerAllowAll = {
@@ -128,80 +247,91 @@ export class Storage {
 
     this.orbitdb = await OrbitDB.createInstance(this.ipfs, { directory: orbitDbDir })
 
-    const publicChannels = new ChannelsStore<IZbayChannel>(this.orbitdb, 'zbay-public-channels', AccessControllerAllowAll).create()
+    const publicChannels = new ChannelsStore<IZbayChannel>(this.orbitdb, 'zbay-public-channels', AccessControllerAllowAll)
+    publicChannels.create()
+    publicChannels.events.on('replicated', () => {
+      
+    })
+    const publicMessages = new ChannelMessagesStore<IMessage>(this.orbitdb, 'zbay.channels', AccessControllerAllowAll, publicChannels, this.repos)
+    publicMessages.initAllChannels()
+    publicMessages.events.on('write', () => {
+
+    })
+
     const messageThreads = new ChannelsStore<IMessageThread>(this.orbitdb, 'message-threads', AccessControllerAllowAll).create()
     const directMessages = new ChannelsStore<IPublicKey>(this.orbitdb, 'direct-messages', AccessControllerAllowAll).create()
+    
 
     // await this.createDbForChannels()
     // await this.createDbForDirectMessages()
     // await this.createDbForMessageThreads()
-    await this.subscribeForAllChannels()
+    // await this.subscribeForAllChannels()
     await this.subscribeForAllDirectMessagesThreads()
     // await this.subscribeForAllMessageThreads()
   }
 
-  public async loadInitChannels() {
-    // Temp, only for entrynode
-    const initChannels: ChannelInfoResponse = JSON.parse(
-      fs.readFileSync('initialPublicChannels.json').toString()
-    )
-    for (const channel of Object.values(initChannels)) {
-      await this.createChannel(channel.address, channel)
-    }
-  }
+  // public async loadInitChannels() {
+  //   // Temp, only for entrynode
+  //   const initChannels: ChannelInfoResponse = JSON.parse(
+  //     fs.readFileSync('initialPublicChannels.json').toString()
+  //   )
+  //   for (const channel of Object.values(initChannels)) {
+  //     await this.createChannel(channel.address, channel)
+  //   }
+  // }
 
-  private async createDbForChannels() {
-    console.log('creating channels count')
-    this.channels = await this.orbitdb.keyvalue<IZbayChannel>('zbay-public-channels', {
-      accessController: {
-        write: ['*']
-      }
-    })
-    this.channels.events.on('replicated', () => {
-      console.log('REPLICATED CHANNELS')
-    })
-    await this.channels.load()
-    console.log('ALL CHANNELS COUNT:', Object.keys(this.channels.all).length)
-    console.log('ALL CHANNELS COUNT:', Object.keys(this.channels.all))
-  }
+  // private async createDbForChannels() {
+  //   console.log('creating channels count')
+  //   this.channels = await this.orbitdb.keyvalue<IZbayChannel>('zbay-public-channels', {
+  //     accessController: {
+  //       write: ['*']
+  //     }
+  //   })
+  //   this.channels.events.on('replicated', () => {
+  //     console.log('REPLICATED CHANNELS')
+  //   })
+  //   await this.channels.load()
+  //   console.log('ALL CHANNELS COUNT:', Object.keys(this.channels.all).length)
+  //   console.log('ALL CHANNELS COUNT:', Object.keys(this.channels.all))
+  // }
 
-  private async createDbForMessageThreads() {
-    console.log('try to create db for messages')
-    this.messageThreads = await this.orbitdb.keyvalue<IMessageThread>('message-threads', {
-      accessController: {
-        write: ['*']
-      }
-    })
-    this.messageThreads.events.on('replicated', () => {
-      console.log('REPLICATED CONVERSATIONS-ID')
-      this.subscribeForAllDirectMessagesThreads()
-    })
-    await this.messageThreads.load()
-    console.log('ALL MESSAGE THREADS COUNT:', Object.keys(this.messageThreads.all).length)
-    console.log('ALL MESSAGE THREADS COUNT:', Object.keys(this.messageThreads.all))
-  }
+  // private async createDbForMessageThreads() {
+  //   console.log('try to create db for messages')
+  //   this.messageThreads = await this.orbitdb.keyvalue<IMessageThread>('message-threads', {
+  //     accessController: {
+  //       write: ['*']
+  //     }
+  //   })
+  //   this.messageThreads.events.on('replicated', () => {
+  //     console.log('REPLICATED CONVERSATIONS-ID')
+  //     this.subscribeForAllDirectMessagesThreads()
+  //   })
+  //   await this.messageThreads.load()
+  //   console.log('ALL MESSAGE THREADS COUNT:', Object.keys(this.messageThreads.all).length)
+  //   console.log('ALL MESSAGE THREADS COUNT:', Object.keys(this.messageThreads.all))
+  // }
 
-  private async createDbForDirectMessages() {
-    this.directMessages = await this.orbitdb.keyvalue<IPublicKey>('direct-messages', {
-      accessController: {
-        write: ['*']
-      }
-    })
-    this.directMessages.events.on('replicated', () => {
-      console.log('REPLICATED USERS')
-    })
-    await this.directMessages.load()
-    console.log('ALL USERS COUNT:', Object.keys(this.directMessages.all).length)
-    console.log('ALL USERS COUNT:', Object.keys(this.directMessages.all))
-  }
+  // private async createDbForDirectMessages() {
+  //   this.directMessages = await this.orbitdb.keyvalue<IPublicKey>('direct-messages', {
+  //     accessController: {
+  //       write: ['*']
+  //     }
+  //   })
+  //   this.directMessages.events.on('replicated', () => {
+  //     console.log('REPLICATED USERS')
+  //   })
+  //   await this.directMessages.load()
+  //   console.log('ALL USERS COUNT:', Object.keys(this.directMessages.all).length)
+  //   console.log('ALL USERS COUNT:', Object.keys(this.directMessages.all))
+  // }
 
-  async subscribeForAllChannels() {
-    for (const channelData of Object.values(this.channels.all)) {
-      if (!this.repos.has(channelData.address)) {
-        await this.createChannel(channelData.address, channelData)
-      }
-    }
-  }
+  // async subscribeForAllChannels() {
+  //   for (const channelData of Object.values(this.channels.all)) {
+  //     if (!this.repos.has(channelData.address)) {
+  //       await this.createChannel(channelData.address, channelData)
+  //     }
+  //   }
+  // }
 
   // async subscribeForAllMessageThreads() {
   //   for (const messageThread of Object.values(this.messageThreads.all)) {
@@ -295,37 +425,37 @@ export class Storage {
     await db.add(message)
   }
 
-  private async createChannel(
-    channelAddress: string,
-    channelData?: IChannelInfo
-  ): Promise<EventStore<IMessage>> {
-    if (!channelAddress) {
-      console.log('No channel address, can\'t create channel')
-      return
-    }
+  // private async createChannel(
+  //   channelAddress: string,
+  //   channelData?: IChannelInfo
+  // ): Promise<EventStore<IMessage>> {
+  //   if (!channelAddress) {
+  //     console.log('No channel address, can\'t create channel')
+  //     return
+  //   }
 
-    const db: EventStore<IMessage> = await this.orbitdb.log<IMessage>(
-      `zbay.channels.${channelAddress}`,
-      {
-        accessController: {
-          write: ['*']
-        }
-      }
-    )
-    await db.load()
+  //   const db: EventStore<IMessage> = await this.orbitdb.log<IMessage>(
+  //     `zbay.channels.${channelAddress}`,
+  //     {
+  //       accessController: {
+  //         write: ['*']
+  //       }
+  //     }
+  //   )
+  //   await db.load()
 
-    const channel = this.channels.get(channelAddress)
-    if (!channel) {
-      await this.channels.put(channelAddress, {
-        orbitAddress: `/orbitdb/${db.address.root}/${db.address.path}`,
-        address: channelAddress,
-        ...channelData
-      })
-      console.log(`Created channel ${channelAddress}`)
-    }
-    this.repos.set(channelAddress, { db, eventsAttached: false })
-    return db
-  }
+  //   const channel = this.channels.get(channelAddress)
+  //   if (!channel) {
+  //     await this.channels.put(channelAddress, {
+  //       orbitAddress: `/orbitdb/${db.address.root}/${db.address.path}`,
+  //       address: channelAddress,
+  //       ...channelData
+  //     })
+  //     console.log(`Created channel ${channelAddress}`)
+  //   }
+  //   this.repos.set(channelAddress, { db, eventsAttached: false })
+  //   return db
+  // }
 
   // private async createDirectMessage
 
