@@ -135,6 +135,7 @@ export class ConnectionsManager {
     } else {
       this.peerId = staticPeerId
     }
+    console.log('PEER ID', this.peerId.toJSON())
     this.createAgent()
 
     const listenAddrs = [`/dns4/${this.host}/tcp/${this.port}/ws`]

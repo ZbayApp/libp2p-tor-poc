@@ -215,7 +215,10 @@ export class Storage {
       console.log(`Created channel ${channelAddress}`)
     }
     this.repos.set(channelAddress, { db, eventsAttached: false })
-    db.load()
+    console.time(`load ${channelAddress}`)
+    await db.load()
+    console.timeEnd(`load ${channelAddress}`)
+    console.log(`loaded ${this.getAllChannelMessages(db).length}`)
     return db
   }
 }
