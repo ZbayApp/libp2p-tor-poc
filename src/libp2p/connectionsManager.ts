@@ -314,9 +314,8 @@ export class ConnectionsManager {
     }
     try {
       return await fetch(serviceAddress + '/register', options)
-    } catch (e) {
-      console.error(e)
-      throw e
+    } catch (err) {
+      this.emitCertificateRegistrationError(`Certificate registration request err: ${err as string}`)
     }
   }
 
