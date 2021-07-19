@@ -71,6 +71,7 @@ export class Storage {
 
   public async init(libp2p: any, peerID: PeerId): Promise<void> {
     log('STORAGE: Entered init')
+    console.log('zbaymobile:sanity check')
     if (this.options?.createPaths) {
       createPaths([this.ipfsRepoPath, this.orbitDbDir])
     }

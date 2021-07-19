@@ -39,6 +39,7 @@ export const runWaggle = async (): Promise<any> => {
   connectionsManager
     .initializeNode()
     .then(async () => {
+      console.log('zbaymobile:sanity check')
       await connectionsManager.initStorage()
     })
     .catch(error => {
