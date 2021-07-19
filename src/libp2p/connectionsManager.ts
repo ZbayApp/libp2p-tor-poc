@@ -313,6 +313,7 @@ export class ConnectionsManager {
       agent: new SocksProxyAgent({ port: this.agentPort, host: this.agentHost })
     }
     try {
+      log('Before calling certificate registration service')
       return await fetch(serviceAddress + '/register', options)
     } catch (err) {
       log.error(`Certificate registration request err: ${err as string}`)
