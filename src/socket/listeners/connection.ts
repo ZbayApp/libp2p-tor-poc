@@ -63,6 +63,7 @@ export const connections = (io, connectionsManager: ConnectionsManager) => {
       }
     )
     socket.on(EventTypesServer.REGISTER_USER_CERTIFICATE, async (serviceAddress: string, userCsr: string) => {
+      console.log('zbaymobile:got event from front end')
       await connectionsManager.registerUserCertificate(serviceAddress, userCsr)
     })
     socket.on(EventTypesServer.SAVE_CERTIFICATE, async (certificate: string) => {

@@ -290,22 +290,29 @@ export class ConnectionsManager {
   }
 
   public registerUserCertificate = async (serviceAddress: string, userCsr: string) => {
+    console.log(`waggle:before trying to make http request to ${serviceAddress}`)
     const response = await this.sendCertificateRegistrationRequest(serviceAddress, userCsr)
     switch (response.status) {
       case 200:
+        console.log('zbaymobile:http 200')
         break
       case 403:
+        console.log('zbaymobile:http 403')
         this.emitCertificateRegistrationError('Username already taken.')
         return
       default:
+        console.log('zbaymobile:http error')
         this.emitCertificateRegistrationError('Registering username failed.')
         return
     }
+    console.log('zbaymobile:before parsing http response')
     const certificate: string = await response.json()
+    console.log('zbaymobile:before sending response via websocket')
     this.io.emit(EventTypesResponse.SEND_USER_CERTIFICATE, certificate)
   }
 
   public sendCertificateRegistrationRequest = async (serviceAddress: string, userCsr: string): Promise<Response> => {
+    console.log('zbaymobile:before trying to send http request')
     const options = {
       method: 'POST',
       body: JSON.stringify({ data: userCsr }),
@@ -313,15 +320,16 @@ export class ConnectionsManager {
       agent: new SocksProxyAgent({ port: this.agentPort, host: this.agentHost })
     }
     try {
-      log('Before calling certificate registration service')
+      console.log('zbaymobile:before calling certificate registration service')
       return await fetch(serviceAddress + '/register', options)
     } catch (err) {
-      log.error(`Certificate registration request err: ${err as string}`)
+      console.log(`zbaymobile:certificate registration request err: ${err as string}`)
       this.emitCertificateRegistrationError(`Certificate registration request err: ${err as string}`)
     }
   }
 
   public emitCertificateRegistrationError(message: string) {
+    console.log('zbaymobile:emitting certificate registration error')
     this.io.emit(EventTypesResponse.CERTIFICATE_REGISTRATION_ERROR, message)
   }
 
