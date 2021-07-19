@@ -315,6 +315,7 @@ export class ConnectionsManager {
     try {
       return await fetch(serviceAddress + '/register', options)
     } catch (err) {
+      log.error(`Certificate registration request err: ${err as string}`)
       this.emitCertificateRegistrationError(`Certificate registration request err: ${err as string}`)
     }
   }
