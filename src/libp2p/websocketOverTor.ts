@@ -40,7 +40,7 @@ class WebsocketsOverTor extends WebSockets {
   }
 
   async dial(ma, options: any = {}) {
-    log('dialing %s', ma)
+    console.log('dialing %s', ma)
     let conn
     let socket
     let maConn
@@ -120,6 +120,7 @@ class WebsocketsOverTor extends WebSockets {
       let maConn, conn
       // eslint-disable-next-line
       const query = url.parse(request.url, true).query
+      console.log('>>>> QUERY', query)
       log('query', query.remoteAddress)
       try {
         maConn = toConnection(stream, { remoteAddr: multiaddr(query.remoteAddress.toString()) })
@@ -127,6 +128,7 @@ class WebsocketsOverTor extends WebSockets {
           id: PeerId.createFromB58String(query.remoteAddress.toString().split('/p2p/')[1]),
           multiaddrs: [maConn.remoteAddr]
         }
+        console.log('>>>> PEER:', peer)
         this.discovery.emit('peer', peer)
         log('new inbound connection %s', maConn.remoteAddr)
         conn = await upgrader.upgradeInbound(maConn)
@@ -173,6 +175,8 @@ class WebsocketsOverTor extends WebSockets {
       }
 
       const ipfsId: string = listeningMultiaddr.getPeerId()
+      console.log('IpfsID:', ipfsId)
+      console.log('listeningMultiaddr', listeningMultiaddr.toString())
 
       // Because TCP will only return the IPv6 version
       // we need to capture from the passed multiaddr

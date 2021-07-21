@@ -315,7 +315,7 @@ export class Storage {
   ): Promise<void> {
     let db: EventStore<IMessage>
     let repo = this.publicChannelsRepos.get(channelAddress)
-
+    console.log('SUBSCRIBING TO ', channelAddress)
     if (repo) {
       db = repo.db
     } else {

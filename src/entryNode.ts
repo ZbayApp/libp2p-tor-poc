@@ -8,7 +8,7 @@ import fs from 'fs'
 import PeerId from 'peer-id'
 import { torBinForPlatform, torDirForPlatform } from './utils'
 
-class Node {
+export default class Node {
   tor: Tor
   torPath: string
   torAppDataPath: string
@@ -56,6 +56,7 @@ class Node {
   }
 
   public async init(): Promise<void> {
+    console.log('init entry node')
     this.tor = await this.spawnTor()
     const onionAddress = await this.spawnService()
     console.log('onion', onionAddress)
@@ -66,6 +67,7 @@ class Node {
   }
 
   async spawnTor (): Promise<Tor> {
+    console.log('spawning tor')
     const tor = new Tor({
       torPath: this.torPath,
       appDataPath: this.torAppDataPath,
@@ -79,7 +81,9 @@ class Node {
         detached: true
       }
     })
+    console.log('init tor')
     await tor.init()
+    console.log('after init tor')
     return tor
   }
 
@@ -136,6 +140,7 @@ class Node {
 const main = async () => {
   const node = new Node()
   await node.init()
+  console.log('after init entry node')
 }
 
 main().catch(err => {
